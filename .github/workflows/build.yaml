@@ -1,0 +1,75 @@
+name: Build and Push to ECR
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+    branches: [main]
+
+env:
+  AWS_REGION: us-east-1
+  ECR_REPOSITORY: ecso-test-app
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Extract metadata
+        id: meta
+        run: |
+          SHA_SHORT=$(echo ${{ github.sha }} | cut -c1-7)
+          echo "sha_short=$SHA_SHORT" >> $GITHUB_OUTPUT
+
+          if [[ $GITHUB_REF == refs/tags/* ]]; then
+            echo "tag=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Build and push Docker image
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          SHA_SHORT: ${{ steps.meta.outputs.sha_short }}
+          TAG: ${{ steps.meta.outputs.tag }}
+        run: |
+          # Build with commit SHA
+          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$SHA_SHORT .
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:$SHA_SHORT
+
+          # Also tag as latest for main branch
+          if [[ $GITHUB_REF == refs/heads/main ]]; then
+            docker tag $ECR_REGISTRY/$ECR_REPOSITORY:$SHA_SHORT $ECR_REGISTRY/$ECR_REPOSITORY:latest
+            docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
+          fi
+
+          # If this is a tag, also push with tag name
+          if [[ -n "$TAG" ]]; then
+            docker tag $ECR_REGISTRY/$ECR_REPOSITORY:$SHA_SHORT $ECR_REGISTRY/$ECR_REPOSITORY:$TAG
+            docker push $ECR_REGISTRY/$ECR_REPOSITORY:$TAG
+          fi
+
+          echo "Pushed images:"
+          echo "  - $ECR_REGISTRY/$ECR_REPOSITORY:$SHA_SHORT"
+          if [[ $GITHUB_REF == refs/heads/main ]]; then
+            echo "  - $ECR_REGISTRY/$ECR_REPOSITORY:latest"
+          fi
+          if [[ -n "$TAG" ]]; then
+            echo "  - $ECR_REGISTRY/$ECR_REPOSITORY:$TAG"
+          fi

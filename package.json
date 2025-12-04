@@ -1,0 +1,11 @@
+{
+  "name": "ecso-test-app",
+  "version": "1.0.0",
+  "description": "Test application for ECSO demo",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "author": "ivan-bax",
+  "license": "MIT"
+}
